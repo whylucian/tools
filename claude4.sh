@@ -54,7 +54,7 @@ if [ $# -gt 0 ]; then
             exit 1
         fi
         
-        CONTENT="$CONTENT"\n\n'"File: $FILE"\n'"$(cat "$FILE")"
+        CONTENT="$CONTENT"$'\n\n'"File: $FILE"$'\n'"$(cat "$FILE")"
     done
 fi
 
