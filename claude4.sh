@@ -78,6 +78,5 @@ if [ -n "$OUTPUT_FILE" ]; then
     echo "$RESPONSE" > "$OUTPUT_FILE"
     echo "Output saved to: $OUTPUT_FILE"
 else
-    # Fix bullet point formatting by ensuring each bullet starts on a new line
-    echo "$RESPONSE" | sed 's/• /\n• /g' | python -m rich.markdown -
+    echo "$RESPONSE" | python -m rich.markdown -
 fi
