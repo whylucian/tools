@@ -62,6 +62,14 @@ shift  # Remove the first argument (prompt), rest are files
 # Build the content string with file contents
 CONTENT="$PROMPT"
 
+# Check for piped input
+if [ ! -t 0 ]; then
+    PIPED_INPUT=$(cat)
+    if [ -n "$PIPED_INPUT" ]; then
+        CONTENT="$CONTENT"$'\n\n'"Piped input:"$'\n'"$PIPED_INPUT"
+    fi
+fi
+
 # Process each file (if any)
 if [ $# -gt 0 ]; then
     for FILE in "$@"; do
