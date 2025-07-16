@@ -208,7 +208,7 @@ fi
 debug "Final content length: ${#CONTENT} characters"
 
 # Use jq to properly build JSON and make API call
-RESPONSE=$(jq -n \
+API_RESPONSE=$(jq -n \
   --arg model "$MODEL" \
   --arg content "$CONTENT" \
   '{
@@ -221,9 +221,26 @@ curl -X POST https://openrouter.ai/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "HTTP-Referer: https://github.com/user/repo" \
   -H "X-Title: LLM CLI Tool" \
-  -d @- | jq -r '.choices[0].message.content')
+  -d @-)
+
+# Extract the message content
+RESPONSE=$(echo "$API_RESPONSE" | jq -r '.choices[0].message.content')
+
+# Extract usage information
+PROMPT_TOKENS=$(echo "$API_RESPONSE" | jq -r '.usage.prompt_tokens // 0')
+COMPLETION_TOKENS=$(echo "$API_RESPONSE" | jq -r '.usage.completion_tokens // 0')
+TOTAL_TOKENS=$(echo "$API_RESPONSE" | jq -r '.usage.total_tokens // 0')
 
 debug "API call completed, response length: ${#RESPONSE} characters"
+debug "Token usage - Prompt: $PROMPT_TOKENS, Completion: $COMPLETION_TOKENS, Total: $TOTAL_TOKENS"
+
+# Display token usage information
+if [ "$PROMPT_TOKENS" != "0" ] || [ "$COMPLETION_TOKENS" != "0" ]; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+    echo "📊 Token Usage: ${PROMPT_TOKENS} in + ${COMPLETION_TOKENS} out = ${TOTAL_TOKENS} total" >&2
+    echo "🤖 Model: ${MODEL}" >&2
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+fi
 
 # Output handling
 if [ -n "$OUTPUT_FILE" ]; then
