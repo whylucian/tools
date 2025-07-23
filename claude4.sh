@@ -78,5 +78,5 @@ if [ -n "$OUTPUT_FILE" ]; then
     echo "$RESPONSE" > "$OUTPUT_FILE"
     echo "Output saved to: $OUTPUT_FILE"
 else
-    echo "$RESPONSE" | python -m rich.markdown - | sed 's/• /\n• /g'
+    echo "$RESPONSE" | glow - # python -m rich.markdown - | sed 's/• /\n• /g'
 fi
