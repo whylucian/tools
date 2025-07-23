@@ -2,10 +2,11 @@
 # claude4.sh - Simple CLI for Claude 4 Sonnet
 
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 [-out filename] 'prompt' [file1.txt file2.txt ...]"
+    echo "Usage: $0 [-out filename] [-s] 'prompt' [file1.txt file2.txt ...]"
     echo "Example: $0 'What is the capital of France?'"
     echo "Example: $0 'Summarize these files' file1.txt file2.txt"
     echo "Example: $0 -out summary.txt 'Summarize this' file.txt"
+    echo "Example: $0 -s 'Quick question' (uses 3.5 Haiku model)"
     exit 1
 fi
 
@@ -15,8 +16,9 @@ if [ -z "$anthropic_key" ]; then
     exit 1
 fi
 
-# Parse -out parameter
+# Parse parameters
 OUTPUT_FILE=""
+USE_HAIKU=false
 ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -24,6 +26,10 @@ while [[ $# -gt 0 ]]; do
         -out)
             OUTPUT_FILE="$2"
             shift 2
+            ;;
+        -s)
+            USE_HAIKU=true
+            shift
             ;;
         *)
             ARGS+=("$1")
@@ -58,9 +64,16 @@ if [ $# -gt 0 ]; then
     done
 fi
 
+# Set model based on flag
+if [ "$USE_HAIKU" = true ]; then
+    MODEL="claude-3-5-haiku-20241022"
+else
+    MODEL="claude-sonnet-4-20250514"
+fi
+
 # Use jq to properly build JSON and make API call
 RESPONSE=$(jq -n \
-  --arg model "claude-sonnet-4-20250514" \
+  --arg model "$MODEL" \
   --arg content "$CONTENT" \
   '{
     model: $model,
