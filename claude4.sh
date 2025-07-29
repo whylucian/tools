@@ -66,7 +66,7 @@ fi
 
 # Set model based on flag
 if [ "$USE_HAIKU" = true ]; then
-    MODEL="claude-3-5-haiku-20241022"
+    MODEL="claude-3-5-haiku-latest"
 else
     MODEL="claude-sonnet-4-20250514"
 fi
