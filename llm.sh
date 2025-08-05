@@ -208,13 +208,12 @@ fi
 debug "Final content length: ${#CONTENT} characters"
 
 # Use jq to properly build JSON and make API call
-API_RESPONSE=$(jq -n \
+API_RESPONSE=$(echo "$CONTENT" | jq -Rs \
   --arg model "$MODEL" \
-  --arg content "$CONTENT" \
   '{
     model: $model,
     max_tokens: 50000,
-    messages: [{role: "user", content: $content}]
+    messages: [{role: "user", content: .}]
   }' | \
 curl -X POST https://openrouter.ai/api/v1/chat/completions \
   -H "Authorization: Bearer $openrouter_key" \
