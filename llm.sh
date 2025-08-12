@@ -222,8 +222,15 @@ curl -X POST https://openrouter.ai/api/v1/chat/completions \
   -H "X-Title: LLM CLI Tool" \
   -d @-)
 
-# Extract the message content
-RESPONSE=$(echo "$API_RESPONSE" | jq -r '.choices[0].message.content')
+# Extract the message content and handle errors
+RESPONSE=$(echo "$API_RESPONSE" | jq -r '.choices[0].message.content // empty')
+
+# Check for API errors
+if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "null" ]; then
+    echo "Error: API call failed or returned null response" >&2
+    echo "API Response: $API_RESPONSE" >&2
+    exit 1
+fi
 
 # Extract usage information
 PROMPT_TOKENS=$(echo "$API_RESPONSE" | jq -r '.usage.prompt_tokens // 0')
@@ -246,5 +253,11 @@ if [ -n "$OUTPUT_FILE" ]; then
     echo "$RESPONSE" > "$OUTPUT_FILE"
     echo "Output saved to: $OUTPUT_FILE"
 else
-    echo "$RESPONSE" | glow - # python -m rich.markdown - | sed 's/• /\n• /g'
+    # Check if glow is available and working properly
+    if command -v glow >/dev/null 2>&1 && echo "test" | glow - >/dev/null 2>&1; then
+        echo "$RESPONSE" | glow -
+    else
+        # Fallback to plain text output
+        echo "$RESPONSE"
+    fi
 fi
