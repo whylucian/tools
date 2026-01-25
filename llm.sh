@@ -2,11 +2,13 @@
 # llm.sh - CLI for OpenRouter LLMs
 
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 [-model model_name] [-out filename] [--rag rag_db] [--rag-top-k N] [--llm-rag-prompt] [-v|--verbose] 'prompt' [file1.txt file2.txt ...]"
+    echo "Usage: $0 [-model model_name] [-out filename] [-img image1.jpg ...] [--rag rag_db] [--rag-top-k N] [--llm-rag-prompt] [-v|--verbose] 'prompt' [file1.txt file2.txt ...]"
     echo "       $0 models"
     echo "Example: $0 'What is the capital of France?'"
     echo "Example: $0 -model anthropic/claude-3.5-sonnet 'Summarize these files' file1.txt file2.txt"
     echo "Example: $0 -out summary.txt 'Summarize this' file.txt"
+    echo "Example: $0 -img photo.jpg 'What is in this image?'"
+    echo "Example: $0 -img img1.jpg -img img2.png 'Compare these images'"
     echo "Example: $0 --rag rag_db 'What do my documents say about AI?'"
     echo "Example: $0 --rag rag_db --rag-top-k 10 'Query with more results'"
     echo "Example: $0 --rag rag_db --llm-rag-prompt 'What do my documents say about machine learning?'"
@@ -37,6 +39,7 @@ RAG_DB=""
 RAG_TOP_K=5
 LLM_RAG_PROMPT=false
 VERBOSE=false
+IMAGES=()
 ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -47,6 +50,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -model)
             MODEL="$2"
+            shift 2
+            ;;
+        -img|--image)
+            IMAGES+=("$2")
             shift 2
             ;;
         --rag)
@@ -142,6 +149,40 @@ debug "RAG DB: ${RAG_DB:-none}"
 debug "RAG top-k: $RAG_TOP_K"
 debug "LLM RAG prompt: $LLM_RAG_PROMPT"
 debug "Output file: ${OUTPUT_FILE:-stdout}"
+debug "Images: ${IMAGES[*]:-none}"
+
+# Helper function to get MIME type from file extension
+get_mime_type() {
+    local file="$1"
+    local ext="${file##*.}"
+    ext=$(echo "$ext" | tr '[:upper:]' '[:lower:]')
+    case "$ext" in
+        jpg|jpeg) echo "image/jpeg" ;;
+        png) echo "image/png" ;;
+        gif) echo "image/gif" ;;
+        webp) echo "image/webp" ;;
+        *) echo "image/jpeg" ;;  # Default fallback
+    esac
+}
+
+# Helper function to encode image to base64 data URL
+encode_image() {
+    local file="$1"
+    local mime_type=$(get_mime_type "$file")
+    local base64_data=$(base64 -w 0 "$file" 2>/dev/null || base64 "$file" 2>/dev/null | tr -d '\n')
+    echo "data:${mime_type};base64,${base64_data}"
+}
+
+# Validate image files if provided
+if [ ${#IMAGES[@]} -gt 0 ]; then
+    for IMG in "${IMAGES[@]}"; do
+        if [ ! -f "$IMG" ]; then
+            echo "Error: Image file '$IMG' not found" >&2
+            exit 1
+        fi
+        debug "Found image: $IMG ($(get_mime_type "$IMG"))"
+    done
+fi
 
 # Build the content string with file contents
 CONTENT="$PROMPT"
@@ -207,20 +248,60 @@ fi
 
 debug "Final content length: ${#CONTENT} characters"
 
-# Use jq to properly build JSON and make API call
-API_RESPONSE=$(echo "$CONTENT" | jq -Rs \
-  --arg model "$MODEL" \
-  '{
-    model: $model,
-    max_tokens: 50000,
-    messages: [{role: "user", content: .}]
-  }' | \
-curl -X POST https://openrouter.ai/api/v1/chat/completions \
-  -H "Authorization: Bearer $openrouter_key" \
-  -H "Content-Type: application/json" \
-  -H "HTTP-Referer: https://github.com/user/repo" \
-  -H "X-Title: LLM CLI Tool" \
-  -d @-)
+# Build and make API call (with or without images)
+if [ ${#IMAGES[@]} -eq 0 ]; then
+    # No images - use simple text content
+    API_RESPONSE=$(echo "$CONTENT" | jq -Rs \
+      --arg model "$MODEL" \
+      '{
+        model: $model,
+        max_tokens: 50000,
+        messages: [{role: "user", content: .}]
+      }' | \
+    curl -X POST https://openrouter.ai/api/v1/chat/completions \
+      -H "Authorization: Bearer $openrouter_key" \
+      -H "Content-Type: application/json" \
+      -H "HTTP-Referer: https://github.com/user/repo" \
+      -H "X-Title: LLM CLI Tool" \
+      -d @-)
+else
+    # With images - use multi-part content array
+    debug "Building multi-part content with ${#IMAGES[@]} image(s)"
+
+    # Create temp file for the request body
+    REQUEST_TEMP=$(mktemp)
+    trap "rm -f '$REQUEST_TEMP'" EXIT
+
+    # Start building the content array with the text prompt
+    echo '[' > "$REQUEST_TEMP"
+    echo "{\"type\": \"text\", \"text\": $(echo "$CONTENT" | jq -Rs .)}" >> "$REQUEST_TEMP"
+
+    # Add each image to the content array
+    for IMG in "${IMAGES[@]}"; do
+        debug "Encoding image: $IMG"
+        IMG_MIME=$(get_mime_type "$IMG")
+        IMG_B64=$(base64 -w 0 "$IMG" 2>/dev/null || base64 "$IMG" 2>/dev/null | tr -d '\n')
+        echo ", {\"type\": \"image_url\", \"image_url\": {\"url\": \"data:${IMG_MIME};base64,${IMG_B64}\"}}" >> "$REQUEST_TEMP"
+    done
+
+    echo ']' >> "$REQUEST_TEMP"
+
+    # Build the full request and make API call
+    API_RESPONSE=$(jq \
+      --arg model "$MODEL" \
+      --slurpfile content "$REQUEST_TEMP" \
+      '{
+        model: $model,
+        max_tokens: 50000,
+        messages: [{role: "user", content: $content[0]}]
+      }' <<< '{}' | \
+    curl -X POST https://openrouter.ai/api/v1/chat/completions \
+      -H "Authorization: Bearer $openrouter_key" \
+      -H "Content-Type: application/json" \
+      -H "HTTP-Referer: https://github.com/user/repo" \
+      -H "X-Title: LLM CLI Tool" \
+      -d @-)
+fi
 
 # Extract the message content and handle errors
 RESPONSE=$(echo "$API_RESPONSE" | jq -r '.choices[0].message.content // empty')
